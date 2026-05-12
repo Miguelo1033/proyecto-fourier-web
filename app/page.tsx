@@ -7,6 +7,8 @@ export default function Home() {
   const fftCanvasRef = useRef<HTMLCanvasElement>(null);
   const spectrogramCanvasRef = useRef<HTMLCanvasElement>(null);
 
+  const [savedFFT, setSavedFFT] = useState("");
+
   const [frequency, setFrequency] = useState(0);
   const [secondaryFrequency, setSecondaryFrequency] = useState(0);
   const [amplitude, setAmplitude] = useState(0);
@@ -20,16 +22,12 @@ export default function Home() {
     duration: 0
   });
 
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-
   async function startAnalysis() {
 
     if (!duration || Number(duration) <= 0) {
       alert("Ingresa un tiempo válido");
       return;
     }
-
-    setIsAnalyzing(true);
 
     const analysisTime = Number(duration);
 
@@ -62,7 +60,16 @@ export default function Home() {
 
     if (!fftCtx || !specCtx) return;
 
+    specCtx.clearRect(
+      0,
+      0,
+      specCanvas.width,
+      specCanvas.height
+    );
+
     let xOffset = 0;
+
+    let animationId = 0;
 
     let finalDominant = 0;
     let finalSecondary = 0;
@@ -70,11 +77,14 @@ export default function Home() {
 
     function draw() {
 
-      if (!isAnalyzing) return;
-
       analyser.getByteFrequencyData(dataArray);
 
-      fftCtx.clearRect(0, 0, fftCanvas.width, fftCanvas.height);
+      fftCtx.clearRect(
+        0,
+        0,
+        fftCanvas.width,
+        fftCanvas.height
+      );
 
       let maxAmp = 0;
       let dominantIndex = 0;
@@ -85,6 +95,8 @@ export default function Home() {
       for (let i = 0; i < 300; i++) {
 
         const value = dataArray[i];
+
+        if (value < 15) continue;
 
         if (value > maxAmp) {
 
@@ -119,18 +131,6 @@ export default function Home() {
 
       xOffset += 2;
 
-      if (xOffset > specCanvas.width) {
-
-        xOffset = 0;
-
-        specCtx.clearRect(
-          0,
-          0,
-          specCanvas.width,
-          specCanvas.height
-        );
-      }
-
       const dominantFreq =
         dominantIndex * audioContext.sampleRate / analyser.fftSize;
 
@@ -141,20 +141,20 @@ export default function Home() {
 
       setSecondaryFrequency(Math.round(secondFreq));
 
-      setAmplitude(maxAmp);
+      setAmplitude(Math.round(maxAmp));
 
       finalDominant = Math.round(dominantFreq);
       finalSecondary = Math.round(secondFreq);
-      finalAmplitude = maxAmp;
+      finalAmplitude = Math.round(maxAmp);
 
-      requestAnimationFrame(draw);
+      animationId = requestAnimationFrame(draw);
     }
 
     draw();
 
     setTimeout(() => {
 
-      setIsAnalyzing(false);
+      cancelAnimationFrame(animationId);
 
       stream.getTracks().forEach(track => track.stop());
 
@@ -165,20 +165,26 @@ export default function Home() {
         duration: analysisTime
       });
 
+      const savedImage =
+        fftCanvas.toDataURL("image/png");
+
+      setSavedFFT(savedImage);
+
     }, analysisTime * 1000);
   }
 
   function exportFFT() {
 
-    const canvas = fftCanvasRef.current;
-
-    if (!canvas) return;
+    if (!savedFFT) {
+      alert("No hay FFT guardada");
+      return;
+    }
 
     const link = document.createElement("a");
 
     link.download = "fft_resultado.png";
 
-    link.href = canvas.toDataURL("image/png");
+    link.href = savedFFT;
 
     link.click();
   }
@@ -218,7 +224,6 @@ export default function Home() {
           <div className="grid md:grid-cols-3 gap-6">
 
             <div className="bg-gray-100 rounded-2xl p-4">
-
               <h2 className="font-semibold mb-2 text-black">
                 Frecuencia dominante
               </h2>
@@ -226,11 +231,9 @@ export default function Home() {
               <p className="text-4xl font-bold text-black">
                 {frequency} Hz
               </p>
-
             </div>
 
             <div className="bg-gray-100 rounded-2xl p-4">
-
               <h2 className="font-semibold mb-2 text-black">
                 Frecuencia secundaria
               </h2>
@@ -238,11 +241,9 @@ export default function Home() {
               <p className="text-4xl font-bold text-black">
                 {secondaryFrequency} Hz
               </p>
-
             </div>
 
             <div className="bg-gray-100 rounded-2xl p-4">
-
               <h2 className="font-semibold mb-2 text-black">
                 Intensidad
               </h2>
@@ -250,7 +251,6 @@ export default function Home() {
               <p className="text-4xl font-bold text-black">
                 {amplitude}
               </p>
-
             </div>
 
           </div>
@@ -322,6 +322,22 @@ export default function Home() {
               Exportar FFT
             </button>
 
+            {savedFFT && (
+              <div className="mt-6">
+
+                <h3 className="text-xl font-bold text-black mb-2">
+                  Última FFT guardada
+                </h3>
+
+                <img
+                  src={savedFFT}
+                  alt="FFT guardada"
+                  className="rounded-2xl border"
+                />
+
+              </div>
+            )}
+
           </div>
 
           <div className="bg-white rounded-3xl shadow-xl p-6">
@@ -355,7 +371,7 @@ export default function Home() {
           </h2>
 
           <img
-            src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=https://proyecto-fourier-web.vercel.app/"
+            src="https://quickchart.io/qr?text=https://proyecto-fourier-web.vercel.app/&size=250"
             alt="QR"
             className="rounded-2xl shadow-md"
           />
