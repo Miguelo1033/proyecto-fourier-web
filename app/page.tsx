@@ -45,7 +45,7 @@ export default function Home() {
           </h2>
 
           <img
-            src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=https://https://proyecto-fourier-web.vercel.app/"
+            src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=https://proyecto-fourier-web.vercel.app/"
             alt="QR"
             className="rounded-2xl shadow-md mb-4"
           />
