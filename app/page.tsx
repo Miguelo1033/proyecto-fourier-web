@@ -167,7 +167,7 @@ export default function ResonanciaFinal() {
         
         <div className="bg-white p-2 rounded-lg flex flex-col items-center shadow-lg shadow-blue-500/10">
           <img 
-            src={`https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${currentUrl}`} 
+            src={`https://proyecto-fourier-web.vercel.app/`} 
             alt="QR Code" 
             className="w-16 h-16"
           />
