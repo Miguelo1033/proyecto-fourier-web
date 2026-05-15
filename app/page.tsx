@@ -252,16 +252,17 @@ export default function ResonanciaFinal() {
                 <div className="text-xs text-slate-500">N= {measurements.length} puntos</div>
              </div>
              <div className="h-[400px] w-full">
+                {/* Agregamos "as any" en data y en options para silenciar a TypeScript */}
                 <Scatter 
-                  data={scatterData} 
+                  data={scatterData as any} 
                   options={{ 
                     responsive: true, 
                     maintainAspectRatio: false,
                     scales: {
-                      x: { grid: { color: '#1e293b' }, title: { display: true, text: '1/L (m⁻¹)', color: '#64748b'} },
-                      y: { grid: { color: '#1e293b' }, title: { display: true, text: 'Frecuencia (Hz)', color: '#64748b'} }
+                      x: { grid: { color: '#1e293b' }, title: { display: true, text: 'Inverso de la Longitud 1/L (m⁻¹)', color: '#94a3b8'} },
+                      y: { grid: { color: '#1e293b' }, title: { display: true, text: 'Frecuencia f (Hz)', color: '#94a3b8'} }
                     }
-                  }} 
+                  } as any} 
                 />
              </div>
           </div>
