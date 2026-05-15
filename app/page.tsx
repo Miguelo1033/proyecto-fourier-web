@@ -166,13 +166,13 @@ export default function ResonanciaFinal() {
         </div>
         
         <div className="bg-white p-2 rounded-lg flex flex-col items-center shadow-lg shadow-blue-500/10">
-          <img 
-            src={`https://proyecto-fourier-web.vercel.app/`} 
-            alt="QR Code" 
-            className="w-16 h-16"
-          />
-          <span className="text-[10px] text-black font-bold mt-1 uppercase">Abrir en móvil</span>
-        </div>
+        <img 
+        src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=https://proyecto-fourier-web.vercel.app/" 
+        alt="QR Code" 
+        className="w-16 h-16"
+        />
+        <span className="text-[10px] text-black font-bold mt-1 uppercase">Abrir en móvil</span>
+      </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
