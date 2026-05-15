@@ -2,243 +2,189 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useMemo } from "react";
 
-// Definimos una interfaz para el estado de los resultados
-interface AnalysisResult {
-  dominant: number;
-  secondary: number;
-  amplitude: number;
-  duration: number;
+interface Measurement {
+  f: number;
+  L: number;
+  invL: number;
 }
 
 export default function Home() {
   const fftCanvasRef = useRef<HTMLCanvasElement>(null);
-  const spectrogramCanvasRef = useRef<HTMLCanvasElement>(null);
-
-  const [savedFFT, setSavedFFT] = useState("");
   const [frequency, setFrequency] = useState(0);
-  const [secondaryFrequency, setSecondaryFrequency] = useState(0);
-  const [amplitude, setAmplitude] = useState(0);
-  const [duration, setDuration] = useState("");
+  const [duration, setDuration] = useState("2");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  
+  // --- NUEVOS ESTADOS PARA EL EXPERIMENTO ---
+  const [currentL, setCurrentL] = useState(""); // Longitud manual
+  const [history, setHistory] = useState<Measurement[]>([]);
 
-  const [lastResult, setLastResult] = useState<AnalysisResult>({
-    dominant: 0,
-    secondary: 0,
-    amplitude: 0,
-    duration: 0
-  });
+  // Función para realizar la regresión lineal (Mínimos Cuadrados)
+  const regression = useMemo(() => {
+    if (history.length < 2) return null;
+
+    const n = history.length;
+    let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+
+    history.forEach((m) => {
+      sumX += m.invL;
+      sumY += m.f;
+      sumXY += m.invL * m.f;
+      sumX2 += m.invL * m.invL;
+    });
+
+    const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+    const intercept = (sumY - slope * sumX) / n;
+    
+    // Según física de tubo abierto-cerrado (botella): v = 4 * pendiente
+    // Si su profesor insiste en v = 2 * pendiente, cambiar el 4 por 2.
+    const speedOfSound = slope * 4; 
+
+    return { slope, intercept, speedOfSound };
+  }, [history]);
 
   async function startAnalysis() {
-    if (!duration || Number(duration) <= 0) {
-      alert("Ingresa un tiempo válido");
-      return;
-    }
-
     if (isAnalyzing) return;
-
     try {
       setIsAnalyzing(true);
-      const analysisTime = Number(duration);
-      
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
       const analyser = audioContext.createAnalyser();
-      
       analyser.fftSize = 2048;
-      analyser.smoothingTimeConstant = 0.85;
-
       const source = audioContext.createMediaStreamSource(stream);
       source.connect(analyser);
 
-      const bufferLength = analyser.frequencyBinCount;
-      const dataArray = new Uint8Array(bufferLength);
-
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
       const fftCanvas = fftCanvasRef.current;
-      const specCanvas = spectrogramCanvasRef.current;
-
-      if (!fftCanvas || !specCanvas) return;
-
-      const fftCtx = fftCanvas.getContext("2d");
-      const specCtx = specCanvas.getContext("2d");
-
-      if (!fftCtx || !specCtx) return;
-
-      specCtx.clearRect(0, 0, specCanvas.width, specCanvas.height);
-      let xOffset = 0;
+      const fftCtx = fftCanvas?.getContext("2d");
       let animationId: number;
-
-      let finalDominant = 0;
-      let finalSecondary = 0;
-      let finalAmplitude = 0;
+      let topFreq = 0;
 
       const draw = () => {
         analyser.getByteFrequencyData(dataArray);
-        fftCtx.clearRect(0, 0, fftCanvas.width, fftCanvas.height);
-
-        let maxAmp = 0;
-        let dominantIndex = 0;
-        let secondAmp = 0;
-        let secondIndex = 0;
-
-        for (let i = 0; i < 300; i++) {
-          const value = dataArray[i];
-
-          if (value > maxAmp) {
-            secondAmp = maxAmp;
-            secondIndex = dominantIndex;
-            maxAmp = value;
-            dominantIndex = i;
-          } else if (value > secondAmp) {
-            secondAmp = value;
-            secondIndex = i;
+        if (fftCtx && fftCanvas) {
+          fftCtx.clearRect(0, 0, fftCanvas.width, fftCanvas.height);
+          let maxAmp = 0;
+          let dominantIndex = 0;
+          for (let i = 0; i < 400; i++) {
+            if (dataArray[i] > maxAmp) {
+              maxAmp = dataArray[i];
+              dominantIndex = i;
+            }
+            fftCtx.fillStyle = `rgb(50, 50, 200)`;
+            fftCtx.fillRect(i * 3, fftCanvas.height - dataArray[i], 2, dataArray[i]);
           }
-
-          const barHeight = value * 1.4;
-          fftCtx.fillStyle = `rgb(${value + 80}, 50, 220)`;
-          fftCtx.fillRect(i * 3, fftCanvas.height - barHeight, 2, barHeight);
-
-          specCtx.fillStyle = `rgb(${value}, 50, ${255 - value})`;
-          specCtx.fillRect(xOffset, specCanvas.height - i, 2, 2);
+          topFreq = Math.round((dominantIndex * audioContext.sampleRate) / analyser.fftSize);
+          setFrequency(topFreq);
         }
-
-        xOffset += 2;
-        const dominantFreq = (dominantIndex * audioContext.sampleRate) / analyser.fftSize;
-        const secondFreq = (secondIndex * audioContext.sampleRate) / analyser.fftSize;
-
-        setFrequency(Math.round(dominantFreq));
-        setSecondaryFrequency(Math.round(secondFreq));
-        setAmplitude(Math.round(maxAmp));
-
-        finalDominant = Math.round(dominantFreq);
-        finalSecondary = Math.round(secondFreq);
-        finalAmplitude = Math.round(maxAmp);
-
         animationId = requestAnimationFrame(draw);
       };
 
       draw();
-
       setTimeout(async () => {
         cancelAnimationFrame(animationId);
-        
-        stream.getTracks().forEach(track => track.stop());
+        stream.getTracks().forEach(t => t.stop());
         await audioContext.close();
         setIsAnalyzing(false);
-
-        setLastResult({
-          dominant: finalDominant,
-          secondary: finalSecondary,
-          amplitude: finalAmplitude,
-          duration: analysisTime
-        });
-
-        setSavedFFT(fftCanvas.toDataURL("image/png"));
-      }, analysisTime * 1000);
-
+      }, Number(duration) * 1000);
     } catch (err) {
-      console.error("Error accediendo al micro:", err);
-      alert("Error al acceder al micrófono. Por favor permite los permisos.");
       setIsAnalyzing(false);
+      alert("Error al acceder al micrófono");
     }
   }
 
-  function exportFFT() {
-    if (!savedFFT) { alert("No hay FFT guardada"); return; }
-    const link = document.createElement("a");
-    link.download = "fft_resultado.png";
-    link.href = savedFFT;
-    link.click();
-  }
-
-  function exportSpectrogram() {
-    const canvas = spectrogramCanvasRef.current;
-    if (!canvas) return;
-    const link = document.createElement("a");
-    link.download = "espectrograma.png";
-    link.href = canvas.toDataURL("image/png");
-    link.click();
-  }
+  const addMeasurement = () => {
+    const L = parseFloat(currentL);
+    if (isNaN(L) || L <= 0) {
+      alert("Ingresa una longitud L válida (m)");
+      return;
+    }
+    setHistory([...history, { f: frequency, L, invL: 1 / L }]);
+    setCurrentL("");
+  };
 
   return (
-    <main className="min-h-screen bg-gray-100 p-8">
-      <div className="max-w-7xl mx-auto">
-        <div className="bg-white rounded-3xl shadow-xl p-6 mb-6">
-          <h1 className="text-5xl font-bold mb-4 text-black">Laboratorio FFT Interactivo</h1>
-          <p className="text-black mb-6">Proyecto universitario sobre análisis espectral y procesamiento digital de señales.</p>
-
-          <div className="grid md:grid-cols-3 gap-6">
-            <div className="bg-gray-100 rounded-2xl p-4 text-black">
-              <h2 className="font-semibold mb-2">Frecuencia dominante</h2>
-              <p className="text-4xl font-bold">{frequency} Hz</p>
-            </div>
-            <div className="bg-gray-100 rounded-2xl p-4 text-black">
-              <h2 className="font-semibold mb-2">Frecuencia secundaria</h2>
-              <p className="text-4xl font-bold">{secondaryFrequency} Hz</p>
-            </div>
-            <div className="bg-gray-100 rounded-2xl p-4 text-black">
-              <h2 className="font-semibold mb-2">Intensidad</h2>
-              <p className="text-4xl font-bold">{amplitude}</p>
-            </div>
-          </div>
-
-          <div className="mt-6 flex gap-4 items-center flex-wrap">
-            <input
-              type="number"
-              placeholder="Segundos"
-              value={duration}
-              onChange={(e) => setDuration(e.target.value)}
-              className="border rounded-xl p-3 w-40 text-black"
-              disabled={isAnalyzing}
-            />
-            <button
-              onClick={startAnalysis}
-              disabled={isAnalyzing}
-              className={`${isAnalyzing ? 'bg-gray-400' : 'bg-black'} text-white px-6 py-3 rounded-2xl transition-colors`}
-            >
-              {isAnalyzing ? "Analizando..." : "Iniciar análisis"}
-            </button>
-          </div>
-
-          <div className="mt-6 bg-gray-100 rounded-2xl p-4 text-black">
-            <h2 className="text-2xl font-bold mb-4">Último análisis guardado</h2>
-            <div className="grid grid-cols-2 gap-2">
-               <p>Dominante: {lastResult.dominant} Hz</p>
-               <p>Secundaria: {lastResult.secondary} Hz</p>
-               <p>Intensidad: {lastResult.amplitude}</p>
-               <p>Tiempo: {lastResult.duration}s</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid md:grid-cols-2 gap-6">
-          <div className="bg-white rounded-3xl shadow-xl p-6">
-            <h2 className="text-2xl font-bold mb-4 text-black">Espectro FFT</h2>
-            <canvas ref={fftCanvasRef} width={900} height={400} className="w-full bg-black rounded-2xl" />
-            <button onClick={exportFFT} className="mt-4 bg-black text-white px-4 py-2 rounded-xl">Exportar FFT</button>
-            {savedFFT && (
-              <div className="mt-6">
-                <h3 className="text-xl font-bold text-black mb-2">Última captura</h3>
-                <img src={savedFFT} alt="FFT guardada" className="rounded-2xl border w-full" />
-              </div>
-            )}
-          </div>
-
-          <div className="bg-white rounded-3xl shadow-xl p-6">
-            <h2 className="text-2xl font-bold mb-4 text-black">Espectrograma</h2>
-            <canvas ref={spectrogramCanvasRef} width={900} height={400} className="w-full bg-black rounded-2xl" />
-            <button onClick={exportSpectrogram} className="mt-4 bg-black text-white px-4 py-2 rounded-xl">Exportar Espectrograma</button>
-          </div>
-        </div>
+    <main className="min-h-screen bg-slate-50 p-6 text-black">
+      <div className="max-w-6xl mx-auto grid md:grid-cols-2 gap-8">
         
-        <div className="bg-white rounded-3xl shadow-xl p-6 mt-6 flex flex-col items-center">
-           <h2 className="text-2xl font-bold mb-4 text-black">Escanea el QR</h2>
-           <img 
-            src={`https://quickchart.io/qr?text=${encodeURIComponent("https://proyecto-fourier-web.vercel.app/")}&size=250`} 
-            alt="QR" 
-            className="rounded-2xl shadow-md"
-           />
+        {/* LADO IZQUIERDO: CAPTURA EN VIVO */}
+        <div className="space-y-6">
+          <div className="bg-white p-6 rounded-2xl shadow-md">
+            <h1 className="text-2xl font-bold mb-4">Control de Laboratorio</h1>
+            <div className="flex gap-4 mb-4">
+              <input 
+                type="number" placeholder="Tiempo (s)" value={duration}
+                onChange={e => setDuration(e.target.value)}
+                className="border p-2 rounded-lg w-24"
+              />
+              <button 
+                onClick={startAnalysis} disabled={isAnalyzing}
+                className="bg-blue-600 text-white px-6 py-2 rounded-lg disabled:bg-slate-300"
+              >
+                {isAnalyzing ? "Capturando..." : "Iniciar Captura"}
+              </button>
+            </div>
+            <div className="text-center p-4 bg-slate-100 rounded-xl">
+              <span className="text-sm block">Frecuencia Detectada:</span>
+              <span className="text-5xl font-mono font-bold">{frequency} Hz</span>
+            </div>
+            <canvas ref={fftCanvasRef} width={600} height={200} className="w-full bg-black mt-4 rounded-lg" />
+          </div>
+
+          <div className="bg-blue-50 p-6 rounded-2xl border-2 border-blue-200">
+            <h2 className="font-bold mb-3">Registrar Dato Experimental</h2>
+            <div className="flex gap-4">
+              <input 
+                type="number" placeholder="Longitud L (metros)" value={currentL}
+                onChange={e => setCurrentL(e.target.value)}
+                className="border p-2 rounded-lg flex-1"
+              />
+              <button onClick={addMeasurement} className="bg-green-600 text-white px-4 py-2 rounded-lg">
+                Guardar Medición
+              </button>
+            </div>
+            <p className="text-xs mt-2 text-slate-500">Ej: Si la columna mide 15cm, ingresa 0.15</p>
+          </div>
+        </div>
+
+        {/* LADO DERECHO: RESULTADOS Y REGRESIÓN */}
+        <div className="space-y-6">
+          <div className="bg-white p-6 rounded-2xl shadow-md h-fit">
+            <h2 className="text-xl font-bold mb-4">Tabla de Datos ($f$ vs $1/L$)</h2>
+            <table className="w-full text-sm text-left">
+              <thead>
+                <tr className="border-b">
+                  <th className="py-2">L (m)</th>
+                  <th className="py-2">1/L (m⁻¹)</th>
+                  <th className="py-2">f (Hz)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {history.map((m, i) => (
+                  <tr key={i} className="border-b">
+                    <td>{m.L.toFixed(3)}</td>
+                    <td>{m.invL.toFixed(2)}</td>
+                    <td>{m.f}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {history.length === 0 && <p className="text-slate-400 text-center py-4">No hay datos guardados</p>}
+          </div>
+
+          {regression && (
+            <div className="bg-green-600 text-white p-6 rounded-2xl shadow-lg">
+              <h2 className="text-xl font-bold mb-2">Resultados de Regresión</h2>
+              <p className="text-lg opacity-90">Modelo: $f = {regression.slope.toFixed(2)} \cdot (1/L) + {regression.intercept.toFixed(2)}$</p>
+              <hr className="my-4 opacity-30" />
+              <div className="text-center">
+                <p className="text-sm uppercase tracking-wider">Velocidad del Sonido Estimada:</p>
+                <p className="text-5xl font-bold">{regression.speedOfSound.toFixed(2)} m/s</p>
+                <p className="text-xs mt-2 italic">* Calculado como $v = 4 \times pendiente$ (Tubo abierto-cerrado)</p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </main>
